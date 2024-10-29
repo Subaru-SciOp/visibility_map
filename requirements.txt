@@ -1,0 +1,11 @@
+pip
+healpy
+joblib
+numpy
+pandas
+astroplan
+astropy
+python-dotenv
+bokeh
+colorcet
+git+https://github.com/lsst/uranography.git
