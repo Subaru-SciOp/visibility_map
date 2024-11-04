@@ -1,4 +1,4 @@
-# A Python script to calculate observable time for HSC
+# A Python script to calculate observable time by moon phase and moon separation
 
 ## Overview
 
