@@ -34,7 +34,7 @@ load_dotenv()
 # set the default values for the environment variables
 OBSERVATION_SITE = os.getenv("OBSERVATION_SITE", "subaru")
 UTC_OFFSET = float(os.getenv("UTC_OFFSET", -10))
-DELTA_TIME = float(os.getenv("DELTA_TIME", 5))
+DELTA_TIME = float(os.getenv("DELTA_TIME", 10))
 DOMEOPEN_OFFSET = float(os.getenv("DOMEOPEN_OFFSET", 30))
 MIN_ALTITUDE = float(os.getenv("MIN_ALTITUDE", 30))
 MAX_ALTITUDE = float(os.getenv("MAX_ALTITUDE", 90))
@@ -171,10 +171,6 @@ def calculate_observable_time(
         df_observable_time["gray"][i] += t[1]
         df_observable_time["bright"][i] += t[2]
 
-    # print(df_observable_time)
-
-    # print(len(observable_time))
-
     return df_observable_time
 
 
@@ -254,7 +250,7 @@ def main_calculate_observable_time(
 
     tbret = Table(
         {
-            "date": date_out.flatten(),
+            "date": date_out.flatten().astype(str),
             "ipix": ipix_out.flatten(),
             "ra": ra_out.flatten() * u.deg,
             "dec": dec_out.flatten() * u.deg,
@@ -305,8 +301,10 @@ def main(
     tbout.meta["min_moon_illumination"] = min_moon_illumination
     tbout.meta["max_moon_illumination"] = max_moon_illumination
     tbout.meta["min_moon_separation"] = min_moon_separation
-    tbout.meta["min_altitude"] = min_alt
-    tbout.meta["max_altitude"] = max_alt
+    tbout.meta["min_altitude"] = float(min_alt.value)
+    tbout.meta["max_altitude"] = float(max_alt.value)
+    tbout.meta["domeopen_offset"] = float(domeopen_offset.value)
+    tbout.meta["delta_time"] = float(delta_time.value)
 
     if outfile == sys.stdout:
         print(tbout)
@@ -330,7 +328,10 @@ if __name__ == "__main__":
         "end_date", help="End date of the observing run, inclusive (e.g., 2024-12-31)"
     )
     parser.add_argument(
-        "outfile", help="Output csv file", nargs="?", default=sys.stdout
+        "outfile",
+        help="Output file (ecsv or parquet recommended)",
+        nargs="?",
+        default=sys.stdout,
     )
     parser.add_argument(
         "--nside",
