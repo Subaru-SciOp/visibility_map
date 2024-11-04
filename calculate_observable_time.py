@@ -329,7 +329,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "outfile",
-        help="Output file (ecsv or parquet recommended)",
+        help="Output file (astropy.table compatible format, parquet recommended)",
         nargs="?",
         default=sys.stdout,
     )
