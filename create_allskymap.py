@@ -13,6 +13,7 @@ import healpy as hp
 import numpy as np
 import pandas as pd
 from astropy import units as u
+from astropy.io.registry import IORegistryError
 from astropy.table import Table
 from bokeh.embed import file_html
 from bokeh.io import output_file, output_notebook, show
@@ -34,14 +35,22 @@ def generate_plot(
     tables = []
 
     if np.all(
-        [infile.endswith(".ecsv.gz") or infile.endswith(".ecsv") for infile in infiles]
+        [
+            infile.endswith(".parquet")
+            or infile.endswith(".ecsv.gz")
+            or infile.endswith(".ecsv")
+            for infile in infiles
+        ]
     ):
         for infile in infiles:
             print(f"Reading {infile}")
-            tb = Table.read(infile, format="ascii.ecsv")
+            try:
+                tb = Table.read(infile)
+            except IORegistryError:
+                tb = Table.read(infile, format="ascii.ecsv")
             tables.append(tb)
     else:
-        raise ValueError("Input file must be in ecsv.gz or ecsv format.")
+        raise ValueError("Input file must be in parquet, ecsv.gz, or ecsv format.")
 
     nside = tables[0].meta["nside"]
     area = hp.nside2pixarea(nside, degrees=True) * u.deg**2  # in square degrees
@@ -227,7 +236,7 @@ if __name__ == "__main__":
         "input_files",
         nargs="+",
         type=str,
-        help="Input files (ecsv or ecsv.gz)",
+        help="Input files (parquet, ecsv, or ecsv.gz)",
     )
     parser.add_argument("output_file", type=str, help="Output file (html)")
     parser.add_argument(

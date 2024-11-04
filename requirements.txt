@@ -6,6 +6,7 @@ pandas
 astroplan
 astropy
 python-dotenv
+pyarrow
 bokeh
 colorcet
 git+https://github.com/lsst/uranography.git
