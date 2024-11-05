@@ -187,6 +187,16 @@ def generate_plot(
         line_kwargs={"color": "white"},
     )
 
+    # plot.axis.visible = True
+    # plot.xaxis.ticker = [0, 60, 120, 180, 240, 300]
+    # plot.xaxis.major_label_overrides = {
+    #     0: "0",
+    #     60: "60",
+    #     120: "120",
+    #     180: "180",
+    #     240: "240",
+    # }
+
     frame_left = Node(target="frame", symbol="left", offset=5)
     frame_bottom = Node(target="frame", symbol="bottom", offset=-5)
 
