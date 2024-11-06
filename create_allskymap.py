@@ -239,6 +239,14 @@ def generate_plot(
                             hpix_ds.data['bright_' + data['x'][2]][selected_index]],
                 }
             }
+            if (hpix_ds.selected.indices.length == 0) {
+                s_bar.data = {
+                    x: data['x'],
+                    dark: [0, 0, 0],
+                    gray: [0, 0, 0],
+                    bright: [0, 0, 0],
+                }
+            }
             """,
         ),
     )
