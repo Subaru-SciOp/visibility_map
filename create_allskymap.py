@@ -3,11 +3,11 @@
 # %%
 import argparse
 import datetime
-import os
 from collections import OrderedDict
 from pprint import pprint
 
 import bokeh
+import bokeh.model
 import colorcet as cc
 import healpy as hp
 import numpy as np
@@ -15,10 +15,17 @@ import pandas as pd
 from astropy import units as u
 from astropy.io.registry import IORegistryError
 from astropy.table import Table
-from bokeh.embed import file_html
-from bokeh.io import output_file, output_notebook, show
-from bokeh.layouts import column, gridplot, row
-from bokeh.models import ColorBar, CustomJS, Div, Label, Node, NumericInput, Paragraph
+from bokeh.io import output_file
+from bokeh.layouts import column, row
+from bokeh.models import (
+    ColorBar,
+    CustomJS,
+    Div,
+    HoverTool,
+    Label,
+    Node,
+)
+from bokeh.palettes import MediumContrast3
 from uranography.api import MollweideMap
 
 
@@ -57,43 +64,35 @@ def generate_plot(
 
     print(f"{area=}")
 
-    dict = {
+    dict_observable_time = {
         "files": OrderedDict(),
         "moonsep": [],
         "moonphase": ["dark", "gray", "bright"],
-        # "vmin": 0,
-        # "vmax": 310,
         "vmin": vmin,
         "vmax": vmax,
-        # "cmap": cc.CET_CBL3,
-        # "cmap": cc.CET_L8,
         "cmap": cc.bmy,
         "title": f"{run_name.upper()} Observable Time by Moon Separation ({start_date.date()} - {end_date.date()})",
         "note": f"pixel size: {area.value:.2f} sq. deg.",
     }
-    # print(f"{len(tables)=}")
 
-    # for moonphase in ["dark", "gray", "bright"]:
     moonsep = [int(tb.meta["min_moon_separation"]) for tb in tables]
+    dict_observable_time["moonsep"] = moonsep
     for i, moonsep in enumerate(moonsep):
-        # print(i, moonsep)
-        dict["files"][f"moonsep{moonsep}"] = infiles[i]
-        # dict["moonphase"].append(moonphase)
-        dict["moonsep"].append(moonsep)
+        dict_observable_time["files"][f"moonsep{moonsep}"] = infiles[i]
 
-    pprint(dict["files"])
+    pprint(dict_observable_time["files"])
 
-    vmin, vmax = dict["vmin"], dict["vmax"]
+    vmin, vmax = dict_observable_time["vmin"], dict_observable_time["vmax"]
 
     # interactive plot
     plot = bokeh.plotting.figure(
         width=512 * 2,
         height=256 * 2 + 192,
-        title=dict["title"],
+        title=dict_observable_time["title"],
         match_aspect=True,
         x_axis_label="RA",
         y_axis_label="Dec",
-        tools="pan,wheel_zoom,box_zoom,undo,redo,reset",
+        tools="pan,wheel_zoom,box_zoom,tap,undo,redo,reset",
         active_drag="box_zoom",
         output_backend="webgl",
     )
@@ -101,20 +100,56 @@ def generate_plot(
 
     plot.title.text_font_size = "1.5em"
 
-    cmap = bokeh.transform.linear_cmap("value", dict["cmap"], vmin, vmax)
+    cmap = bokeh.transform.linear_cmap(
+        "value", dict_observable_time["cmap"], vmin, vmax
+    )
     color_bar = ColorBar(
         color_mapper=cmap["transform"],
-        # border_line_color="black",
         bar_line_color="black",
         major_tick_line_color="black",
-        title=f"Observable time in dark time with the minimum moon separation {dict['moonsep'][0]}deg [h]",
+        title=f"Observable time in dark time with the minimum moon separation {dict_observable_time['moonsep'][0]}deg [h]",
         title_text_align="center",
     )
 
     plot.add_layout(color_bar, "below")
 
-    for i in range(len(tables)):
+    # add a bar chart
+    x_bar = [str(x) for x in dict_observable_time["moonsep"]]
+    s_bar = bokeh.models.ColumnDataSource(
+        data=dict(
+            x=x_bar,
+            dark=[0] * len(x_bar),
+            gray=[0] * len(x_bar),
+            bright=[0] * len(x_bar),
+        )
+    )
+    p_bar = bokeh.plotting.figure(
+        x_range=bokeh.models.FactorRange(*x_bar),
+        width=512,
+        height=380,
+        x_axis_label="Minimum Moon Separation [deg]",
+        y_axis_label="Observable time [h]",
+        output_backend="webgl",
+    )
+    p_bar.vbar_stack(
+        dict_observable_time["moonphase"],
+        x="x",
+        width=0.6,
+        color=MediumContrast3,
+        source=s_bar,
+        legend_label=dict_observable_time["moonphase"],
+    )
+    p_bar.y_range.start = 0
+    p_bar.legend.location = "top_center"
+    p_bar.legend.orientation = "horizontal"
+    leg_bar = p_bar.legend[0]
+    p_bar.add_layout(leg_bar, "below")
+    h_bar = HoverTool(
+        tooltips=[("Dark", "@dark"), ("Gray", "@gray"), ("Bright", "@bright")]
+    )
+    p_bar.add_tools(h_bar)
 
+    for i in range(len(tables)):
         df = tables[i].to_pandas()
         df["date"] = pd.to_datetime(df["date"])
 
@@ -127,53 +162,25 @@ def generate_plot(
             .sum()
         )
 
-        # print(df_agg.head(50))
-
         if i == 0:
-
             hpix_ds, hp_cmap, hp_glyph = sky.add_healpix(
-                df_agg[dict["moonphase"][0]].to_numpy(), nside=nside, cmap=cmap
+                df_agg[dict_observable_time["moonphase"][0]].to_numpy(),
+                nside=nside,
+                cmap=cmap,
             )
-            hpix_ds.data[f"{dict['moonphase'][1]}_{dict['moonsep'][i]}"] = df_agg[
-                dict["moonphase"][1]
-            ].to_numpy()
-            hpix_ds.data[f"{dict['moonphase'][2]}_{dict['moonsep'][i]}"] = df_agg[
-                dict["moonphase"][2]
-            ].to_numpy()
-
             hover_tool = sky.add_hp_hovertool(coordinates=True, value=None)
-            hover_tool.tooltips.append(
-                (
-                    f"T({dict['moonphase'][0]}, {dict['moonsep'][i]}deg) [h]",
-                    "@value{0.0}",
-                ),
-            )
-            hover_tool.tooltips.append(
-                (
-                    f"T({dict['moonphase'][1]}, {dict['moonsep'][i]}deg) [h]",
-                    f"@{dict['moonphase'][1]}_{dict['moonsep'][i]}{{0.0}}",
-                ),
-            )
-            hover_tool.tooltips.append(
-                (
-                    f"T({dict['moonphase'][2]}, {dict['moonsep'][i]}deg) [h]",
-                    f"@{dict['moonphase'][2]}_{dict['moonsep'][i]}{{0.0}}",
-                ),
-            )
-        else:
-            # pass
-            #
-            for i_mp in range(len(dict["moonphase"])):
-                hpix_ds.data[f"{dict['moonphase'][i_mp]}_{dict['moonsep'][i]}"] = (
-                    df_agg[dict["moonphase"][i_mp]].to_numpy()
-                )
 
-                hover_tool.tooltips.append(
-                    (
-                        f"T({dict['moonphase'][i_mp]}, {dict['moonsep'][i]}deg) [h]",
-                        f"@{dict['moonphase'][i_mp]}_{dict['moonsep'][i]}{{0.0}}",
-                    ),
-                )
+        for i_mp in range(len(dict_observable_time["moonphase"])):
+            hpix_ds.data[
+                f"{dict_observable_time['moonphase'][i_mp]}_{dict_observable_time['moonsep'][i]}"
+            ] = df_agg[dict_observable_time["moonphase"][i_mp]].to_numpy()
+
+            hover_tool.tooltips.append(
+                (
+                    f"T({dict_observable_time['moonphase'][i_mp]}, {dict_observable_time['moonsep'][i]}deg) [h]",
+                    f"@{dict_observable_time['moonphase'][i_mp]}_{dict_observable_time['moonsep'][i]}{{0.0}}",
+                ),
+            )
 
     sky.add_graticules(
         graticule_kwargs={
@@ -187,16 +194,6 @@ def generate_plot(
         line_kwargs={"color": "white"},
     )
 
-    # plot.axis.visible = True
-    # plot.xaxis.ticker = [0, 60, 120, 180, 240, 300]
-    # plot.xaxis.major_label_overrides = {
-    #     0: "0",
-    #     60: "60",
-    #     120: "120",
-    #     180: "180",
-    #     240: "240",
-    # }
-
     frame_left = Node(target="frame", symbol="left", offset=5)
     frame_bottom = Node(target="frame", symbol="bottom", offset=-5)
 
@@ -204,7 +201,7 @@ def generate_plot(
         x=frame_left,
         y=frame_bottom,
         anchor="bottom_left",
-        text=dict["note"],
+        text=dict_observable_time["note"],
         padding=5,
     )
 
@@ -213,6 +210,38 @@ def generate_plot(
     plot.min_border_left = 48
     plot.min_border_top = 96
     plot.min_border_bottom = 96
+
+    plot.js_on_event(
+        "tap",
+        CustomJS(
+            args={
+                "hpix_ds": hpix_ds,
+                "s_bar": s_bar,
+                "moonphase": dict_observable_time["moonphase"],
+                "n_moonphase": len(dict_observable_time["moonphase"]),
+                "moonsep": dict_observable_time["moonsep"],
+                "n_moonsep": len(dict_observable_time["moonsep"]),
+            },
+            code="""
+            const data = s_bar.data;
+            if (hpix_ds.selected.indices.length == 1) {
+                var selected_index = hpix_ds.selected.indices[0];
+                s_bar.data = {
+                    x: data['x'],
+                    dark: [hpix_ds.data['dark_' + data['x'][0]][selected_index],
+                            hpix_ds.data['dark_' + data['x'][1]][selected_index],
+                            hpix_ds.data['dark_' + data['x'][2]][selected_index]],
+                    gray: [hpix_ds.data['gray_' + data['x'][0]][selected_index],
+                            hpix_ds.data['gray_' + data['x'][1]][selected_index],
+                            hpix_ds.data['gray_' + data['x'][2]][selected_index]],
+                    bright: [hpix_ds.data['bright_' + data['x'][0]][selected_index],
+                            hpix_ds.data['bright_' + data['x'][1]][selected_index],
+                            hpix_ds.data['bright_' + data['x'][2]][selected_index]],
+                }
+            }
+            """,
+        ),
+    )
 
     div = Div(
         text="""<font size='5'>
@@ -225,15 +254,13 @@ def generate_plot(
         Note that the moon phase is different from <a href="https://www.naoj.org/Observing/Proposals/howto.html">the definition of Subaru Telescope</a>.
         </font>
 """,
-        margin=(0, 0, 0, 48),
-        # min_border_left=48,
-        # min_border_top=96,
-        # min_border_bottom=96,
+        margin=(0, 0, 0, 32),
+        width=512,
     )
 
-    grid = column(plot, div)
+    grid = column(plot, row(p_bar, div))
 
-    output_file(outfile, title=dict["title"])
+    output_file(outfile, title=dict_observable_time["title"])
 
     saved_file = bokeh.plotting.save(grid)
 
